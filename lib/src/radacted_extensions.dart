@@ -1,3 +1,4 @@
+import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:measure_size/measure_size.dart';
@@ -30,7 +31,7 @@ extension RedactedText on Text {
 
         for (var box in boxes) {
           children.add(
-            _RedactedFillWidget(
+            RedactedFillWidget(
               configuration: configuration ?? RedactedConfiguration(),
               child: Container(
                 margin: boxes.indexOf(box) != boxes.length
@@ -40,6 +41,58 @@ extension RedactedText on Text {
                             ? 2
                             : 0)
                     : null,
+                width: box.right,
+                height: box.bottom - box.top,
+              ),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children,
+        );
+      },
+    );
+  }
+}
+
+extension RedactedAutoSizeText on AutoSizeText {
+  Widget redact({RedactedConfiguration? configuration}) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        var text = data ?? "";
+        if (text.isEmpty) {
+          if ((configuration ?? RedactedConfiguration()).autoFillTexts) {
+            text = (configuration ?? RedactedConfiguration()).autoFillText;
+          } else {
+            return const SizedBox.shrink();
+          }
+        }
+
+        final span = TextSpan(text: text, style: style);
+        final tp = TextPainter(
+            text: span, textDirection: textDirection ?? TextDirection.ltr);
+        tp.layout(maxWidth: constraints.maxWidth);
+
+        TextSelection selection =
+            TextSelection(baseOffset: 0, extentOffset: text.length);
+        List<TextBox> boxes = tp.getBoxesForSelection(selection);
+
+        List<Widget> children = [];
+
+        for (var box in boxes) {
+          children.add(
+            RedactedFillWidget(
+              configuration: configuration ?? RedactedConfiguration(),
+              child: Container(
+                // margin: boxes.indexOf(box) != boxes.length
+                //     ? EdgeInsets.only(
+                //         bottom: boxes.isNotEmpty &&
+                //                 boxes.indexOf(box) - 1 != boxes.length
+                //             ? 2
+                //             : 0)
+                //     : null,
                 width: box.right,
                 height: box.bottom - box.top,
               ),
@@ -213,6 +266,21 @@ extension RedactedExpanded on Expanded {
   }
 }
 
+extension RedactedFlexible on Flexible {
+  Flexible redact(BuildContext context,
+      {RedactedConfiguration? configuration}) {
+    return Flexible(
+      flex: flex,
+      key: key,
+      child: child.redacted(
+        context: context,
+        redact: true,
+        configuration: configuration,
+      ),
+    );
+  }
+}
+
 extension RedactedAspectRatio on AspectRatio {
   AspectRatio redact(BuildContext context,
       {RedactedConfiguration? configuration}) {
@@ -231,12 +299,18 @@ extension RedactedIcon on Icon {
   }
 }
 
+extension RedactedSvgPictureIcon on SvgPicture {
+  Widget redact() {
+    return SizedBox(height: height, key: key, width: width);
+  }
+}
+
 extension RedactedImageContainer on Container {
   Widget redact(BuildContext context, {RedactedConfiguration? configuration}) {
     if (child == null) return this;
     return Padding(
       padding: margin ?? EdgeInsets.zero,
-      child: _RedactedFillWidget(
+      child: RedactedFillWidget(
         configuration: configuration ?? RedactedConfiguration(),
         child: Container(
           decoration: (decoration is BoxDecoration)
@@ -256,7 +330,8 @@ extension RedactedImageContainer on Container {
           child: child is Icon ||
                   child is Image ||
                   child is SvgPicture ||
-                  child is Text
+                  child is Text ||
+                  child is AutoSizeText
               ? null
               : child!.redacted(
                   context: context,
@@ -354,24 +429,44 @@ extension RedactedInkWell on InkWell {
   }
 }
 
-class _RedactedFillWidget extends StatefulWidget {
-  const _RedactedFillWidget({
+extension RedactedElevatedButton on ElevatedButton {
+  MeasuredWidget redact(BuildContext context,
+      {RedactedConfiguration? configuration}) {
+    return MeasuredWidget(
+      configuration: configuration ?? RedactedConfiguration(),
+      onSizeLoaded: (size) {
+        return Container(
+          padding: EdgeInsets.zero,
+          width: size.width,
+          height: size.height,
+        );
+      },
+      child: this,
+    );
+  }
+}
+
+class RedactedFillWidget extends StatefulWidget {
+  const RedactedFillWidget({
+    super.key,
     required this.child,
     required this.configuration,
   });
   final Container child;
   final RedactedConfiguration configuration;
   @override
-  State<_RedactedFillWidget> createState() => __RedactedFillWidgetState();
+  State<RedactedFillWidget> createState() => _RedactedFillWidgetState();
 }
 
-class __RedactedFillWidgetState extends State<_RedactedFillWidget> {
+class _RedactedFillWidgetState extends State<RedactedFillWidget> {
   @override
   void initState() {
     Future.delayed(widget.configuration.animationDuration, () {
-      setState(() {
-        colored = !colored;
-      });
+      if (mounted) {
+        setState(() {
+          colored = !colored;
+        });
+      }
     });
     super.initState();
   }
@@ -394,9 +489,11 @@ class __RedactedFillWidgetState extends State<_RedactedFillWidget> {
       ),
       child: widget.child,
       onEnd: () {
-        setState(() {
-          colored = !colored;
-        });
+        if (mounted) {
+          setState(() {
+            colored = !colored;
+          });
+        }
       },
     );
   }
@@ -426,7 +523,7 @@ class _MeasuredWidgetState extends State<MeasuredWidget> {
   Widget build(BuildContext context) {
     return MeasureSize(
       onChange: (newSize) {
-        if (size == null && newSize != Size.zero) {
+        if (size == null && newSize != Size.zero && mounted) {
           setState(() {
             size = newSize;
             newChild = widget.onSizeLoaded(newSize) as Container;
@@ -435,7 +532,7 @@ class _MeasuredWidgetState extends State<MeasuredWidget> {
       },
       child: newChild == null
           ? Opacity(opacity: 0, child: widget.child)
-          : _RedactedFillWidget(
+          : RedactedFillWidget(
               configuration: widget.configuration, child: newChild!),
     );
   }
